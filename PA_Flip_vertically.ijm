@@ -2,7 +2,6 @@
 
 macro "FlipAllImagesVERTICALLY [v]"{
 
-
 for (i=0;i<nImages;i++) 
 	{
         selectImage(i+1);             
