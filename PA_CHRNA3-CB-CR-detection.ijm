@@ -1,0 +1,175 @@
+////////////////////////////////////////////////////////////
+//////////// Preselection of cells - GFP signal ////////////
+////////////////////////////////////////////////////////////
+
+macro "PA_DH_analysis_1 [a]"{
+
+/// Open Channels and B&C windows for posible manual adjustment ///
+
+roiManager("reset") // It reset ROI manager after previous session...
+
+print("If Log not open, open it"); // This will close/reset Log window - importatnt for next images...
+selectWindow("Log");
+run("Close" );
+
+
+run("Channels Tool..."); 
+run("Brightness/Contrast...");
+
+image_dir=getDirectory("image");
+original_title=getTitle();
+original=getImageID(); //orig_image_ID
+
+
+//////////// Set MIN & MAX intensity //////////// 
+
+selectImage(original);
+
+Stack.setChannel(2); // GFP
+getStatistics(area, mean, min, max, std, histogram)
+max=mean+6*std
+min=mean+0.5*std
+setMinAndMax(min, max);
+
+Stack.setChannel(3); // CB
+getStatistics(area, mean, min, max, std, histogram)
+max=mean+6*std
+min=mean+1.5*std //1.5 for stainings with higher intensity
+setMinAndMax(min, max);
+
+Stack.setChannel(1); // CR
+getStatistics(area, mean, min, max, std, histogram)
+max=mean+6*std
+min=mean+2.5*std //2.5 for stainings with higher intensity
+setMinAndMax(min, max);
+
+Stack.setDisplayMode("composite");
+Stack.setActiveChannels("010"); // Channel2 green will be dislayed
+
+Dialog.create("Identification of green cells");//instruction for next step/macro
+Dialog.addMessage("1. Use the OVAL or FREEHAND SELECTION tool for marking GFP+ cells. \n2. Add them by pressing T to ROI manager. \n3. Once you are done, press button D.");
+Dialog.show();
+
+setTool("ellipse");
+
+}
+
+/////////////////////////////////////////////////////////////
+//////////// Detection of double positive signal ////////////
+/////////////////////////////////////////////////////////////
+
+macro "cell detection [d]" {
+	
+image_dir=getDirectory("image");
+original_title=getTitle();
+original=getImageID(); //orig_image_ID
+ROI=image_dir+original_title+"_ROI.zip";
+Results=image_dir+original_title+"_1Results.csv";
+ResultsLog=image_dir+original_title+"_2CB_CR_Results.csv";
+NewImg=image_dir+original_title+"_NewImg.tif";
+CB_binary=image_dir+original_title+"_CB_binary.tif";
+CR_binary=image_dir+original_title+"_CR_binary.tif";
+
+ROI_Count=roiManager("count"); //gets the number of rois  
+for (roi=0; roi<ROI_Count; roi++) { // loop through the rois    
+    roiManager("Select", roi); 
+	roiManager("Rename", "Cell"+roi+1); 
+}
+
+roiManager("Show All without labels");
+roiManager("Save", ROI);
+roiManager("deselect");
+roiManager("show none");
+
+//////////// Creating of CB binary image ///////////
+selectImage(original);
+Stack.setChannel(3);
+run("Duplicate...","title=[CB_Copy]");
+run("8-bit");
+run("Gaussian Blur...", "sigma=2");
+run("Auto Threshold", "method=Default white");
+run("Watershed");
+
+
+selectWindow("CB_Copy");
+roiManager("Measure");
+k=RoiManager.size;
+CB_DoublePositive_Count=0
+for (i = 0; i < k; i++) {  
+Measurement1=getResult("Mean", i);
+if(Measurement1>40){ // criteria for overlap
+CB_DoublePositive_Count=CB_DoublePositive_Count+1;
+}
+}
+
+saveAs("Tiff", CB_binary);
+close();
+
+
+//////////// Creating of Calretinin binary image ///////////
+selectImage(original);
+Stack.setChannel(1);
+run("Duplicate...","title=[CR_Copy]");
+run("8-bit");
+run("Gaussian Blur...", "sigma=2");
+run("Auto Threshold", "method=Default white");
+run("Watershed");
+
+
+selectWindow("CR_Copy");
+roiManager("Measure");
+k=RoiManager.size;
+CR_DoublePositive_Count=0
+for (i = 0; i < k; i++) {  
+Measurement2=getResult("Mean", i+k);
+if(Measurement2>40){ // criteria for overlap
+CR_DoublePositive_Count=CR_DoublePositive_Count+1;
+}
+}
+
+///// triple positive cell detection /////
+k=(RoiManager.size)
+TriplePositive_Count=0
+for (i = 0; i < k; i++) {
+	Measurement1=getResult("Mean", i);
+	Measurement2=getResult("Mean", i+k);
+	
+if(Measurement2>40 && Measurement1>40){ // criteria for overlap of triple positive neurons
+TriplePositive_Count=TriplePositive_Count+1;
+}
+}
+
+saveAs("Results", Results);
+run("Clear Results");
+close("Results");
+
+saveAs("Tiff", CR_binary);
+close();
+
+
+//--------------------------------------------------------------------------------------------
+
+selectImage(original);
+
+Stack.setDisplayMode("composite");
+Stack.setActiveChannels("111"); // all channnels
+
+roiManager("deselect");
+roiManager("show none");
+
+selectImage(original);
+saveAs("Tiff", NewImg);
+
+
+roiManager("Show All without labels");
+
+//-------------- Print Results to Log window and save as .csv --------------
+
+print("Image title, #GFP+ cells, #CB_Double positive, #CR_Double positive, #Triple positive");
+print(original_title+", "+ROI_Count+", "+CB_DoublePositive_Count+", "+CR_DoublePositive_Count+", "+TriplePositive_Count);
+
+string = getInfo("log");
+File.saveString(string, ResultsLog);
+
+}
+}
